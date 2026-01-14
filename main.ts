@@ -3,7 +3,7 @@
  * @author Emac
  * @date 2025-01-05
  */
-import { Menu, Notice, Platform, Plugin } from 'obsidian';
+import { App, Menu, Notice, Platform, Plugin } from 'obsidian';
 
 import { settingsStore } from './src/settings';
 import { MinoteSettingTab } from './src/settingTab';
@@ -20,7 +20,7 @@ export default class MinotePlugin extends Plugin {
 
 		const fileManager = new FileManager(this.app.vault, this.app.metadataCache);
 		const minoteApi = new MinoteApi();
-		this.noteSyncer = new NoteSyncer(fileManager, minoteApi);
+		this.noteSyncer = new NoteSyncer(this.app, fileManager, minoteApi);
 
 		const ribbonEl = this.addRibbonIcon('cloud-download', '同步小米笔记', (event) => {
 			if (event.button === 0) {

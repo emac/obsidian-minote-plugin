@@ -4,253 +4,332 @@
  * @date 2025-01-05
  */
 import { get } from 'svelte/store';
+import TurndownService from 'turndown';
+import { App, Notice, TFile } from 'obsidian';
+import path from 'path';
 
 import { settingsStore } from './settings';
 import FileManager from './fileManager';
 import MinoteApi from './minoteApi';
-import path from 'path';
+import type { Note, Folder, SyncInfo } from './models';
 
 export default class NoteSyncer {
+    private app: App;
 	private fileManager: FileManager;
 	private minoteApi: MinoteApi;
 	private notes: Note[] = [];
 	private folders: Folder[] = [];
 	private folderDict: Record<string, string> = {};
 	private thisTimeSynced: SyncInfo[] = [];
+    private turndownService: TurndownService;
+    private attachmentLinkMap: Map<string, string>;
 
-	constructor(fileManager: FileManager, minoteApi: MinoteApi) {
+	constructor(app: App, fileManager: FileManager, minoteApi: MinoteApi) {
+		this.app = app;
 		this.fileManager = fileManager;
 		this.minoteApi = minoteApi;
+        this.attachmentLinkMap = new Map();
+        this.initializeTurndown();
 	}
 
-	public async sync(force = false) {
-		this.clear();
+    private initializeTurndown(): void {
+        this.turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
+        // 禁用转义，避免URL中的特殊字符被转义（如 _ 变成 \_）
+        this.turndownService.escape = (text: string) => text;
+
+        // 规则：转换 <background> 标签为 Obsidian 高亮
+        this.turndownService.addRule('highlight', {
+            filter: (node) => node.nodeName === 'BACKGROUND',
+            replacement: (content) => `==${content}==`
+        });
+        
+        // 规则：转换 <i> 标签为斜体
+        this.turndownService.addRule('italic', {
+            filter: (node) => node.nodeName === 'I',
+            replacement: (content) => `*${content}*`
+        });
+        
+        // 规则：转换 <u> 标签为下划线（使用 HTML，因为 Markdown 不支持）
+        this.turndownService.addRule('underline', {
+            filter: (node) => node.nodeName === 'U',
+            replacement: (content) => `<u>${content}</u>`
+        });
+        
+        // 保持<a>标签，Turndown会自动转换为markdown链接 [text](url)
+        
+        // 规则：转换 <input type="checkbox"> 为待办列表
+        this.turndownService.addRule('task-list', {
+            filter: (node) => node.nodeName === 'INPUT' && node.getAttribute('type') === 'checkbox',
+            replacement: (content, node) => {
+                const isChecked = (node as Element).hasAttribute('checked');
+                let label = '';
+                let nextSibling = node.nextSibling;
+                if (nextSibling && nextSibling.nodeType === 3) { // TEXT_NODE
+                    const text = nextSibling.nodeValue || '';
+                    // 如果文本只包含换行符，保留换行；否则提取标签文本
+                    if (text.trim()) {
+                        label = text.trim();
+                        // 清理掉已处理的文本节点，避免重复渲染
+                        nextSibling.nodeValue = '';
+                    }
+                }
+                return (isChecked ? '- [x] ' : '- [ ] ') + label + '\n';
+            }
+        });
+    }
+
+	public async sync(force = false): Promise<number> {
+		this.clear();
 		if (force) {
 			settingsStore.actions.clearLastTimeSynced();
 		}
-
 		await this.fetchNotesAndFolders();
-		await this.createFolders();
-		const count = await this.syncNotes();
-
-		// 更新上次同步信息
-		settingsStore.actions.setLastTimeSynced(this.thisTimeSynced);
-
+		await this.buildFolderDict(); 
+		const count = await this.syncNotes(force);
+        // 只保存笔记的同步信息
+		settingsStore.actions.setLastTimeSynced(this.thisTimeSynced.filter(s => s.type === 'note'));
 		return count;
 	}
 
-	private clear() {
+	private clear(): void {
 		this.notes = [];
 		this.folders = [];
 		this.folderDict = {};
 		this.thisTimeSynced = [];
 	}
 
-	private async fetchNotesAndFolders() {
-		// 获取第一页
-		let page = await this.minoteApi.fetchPage();
+	private async fetchNotesAndFolders(): Promise<void> {
+		let syncTag = '';
 		while (true) {
+			const page = await this.minoteApi.fetchPage(syncTag);
 			for (const entry of page.data.entries) {
 				if (entry.type === 'note') {
-					// 解析笔记
 					let title = '';
+					let snippet = entry.snippet || '';
 					if (entry.extraInfo) {
 						const extra = JSON.parse(entry.extraInfo);
 						title = extra.title || '';
+						if (extra.note_content_type === 'mind') {
+							snippet = extra.mind_content_plain_text;
+						}
 					}
 					if (!title) {
-						title = entry.snippet.split('\n')[0] + `_${entry.id}`;
+						title = snippet.split('\n')[0].substring(0, 50) || '无标题笔记';
+						title = `${title}_${entry.id}`;
 					}
-					// 去除标题中的HTML标签
-					title = title.replace(/<[^>]+>/g, '');
-					// 去除标题中的非法字符 \/:*?"<>|
-					title = title.replace(/[\\\/:*?"<>|]/g, '');
+					title = title.replace(/<[^>]+>/g, '').replace(/[\\/:*?"<>|]/g, '').trim();
 
-					const note: Note = {
+					this.notes.push({
 						id: entry.id,
 						title,
 						modifyDate: entry.modifyDate,
 						folderId: entry.folderId.toString(),
-					};
-					this.notes.push(note);
+					});
 				}
 			}
 
-			for (const entry of page.data.folders) {
-				if (entry.type === 'folder') {
-					// 解析文件夹
-					const folder: Folder = {
-						id: entry.id.toString(),
-						name: entry.subject,
-					};
-					this.folders.push(folder);
+			// 仍然获取文件夹信息，用于构建标签
+			for (const folder of page.data.folders) {
+				if (folder.type === 'folder') {
+					this.folders.push({
+						id: folder.id.toString(),
+						name: folder.subject,
+					});
 				}
 			}
 
-			// 检查是否需要获取下一页
 			if (page.data.lastPage) {
 				break;
 			}
-
-			// 获取下一页
-			page = await this.minoteApi.fetchPage(page.data.syncTag);
+			syncTag = page.data.syncTag;
 		}
 	}
 
-	private async createFolders() {
-		// 添加默认文件夹
-		this.folders.push({ id: '0', name: '未分类' });
-
+	private async buildFolderDict(): Promise<void> {
+		// 添加已知的文件夹映射作为fallback（小米API返回的folder数据不完整）
+		this.folderDict['0'] = '未分类';
+		this.folderDict['4'] = '摘录';
+		this.folderDict['6'] = '灵感速记';
+		
+		// 添加API返回的文件夹
 		for (const folder of this.folders) {
-			// 更新文件夹字典
-			this.folderDict[folder.id] = folder.name;
-
-			// 加载上次同步信息
-			let lastSyncedFolders: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
-				.filter(note => note.type === 'folder')
-				.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
-					acc[note.id] = note;
-					return acc;
-				}, {});
-
-			// 如果上次曾同步过
-			if (folder.id in lastSyncedFolders) {
-				if (folder.name !== lastSyncedFolders[folder.id].name) {
-					// 重命名文件夹
-					await this.fileManager.renameFolder(lastSyncedFolders[folder.id].name, folder.name);
-					lastSyncedFolders[folder.id].name = folder.name;					
-				}
-
-				// 添加到已处理文件夹列表
-				lastSyncedFolders[folder.id].syncTime = Date.now();
-				this.thisTimeSynced.push(lastSyncedFolders[folder.id]);
-				continue;
-			}
-
-			// 创建文件夹目录
-			await this.fileManager.createFolder(folder.name);
-
-			// 添加到已处理文件夹列表
-			this.thisTimeSynced.push({
-				id: folder.id,
-				type: 'folder',
-				name: folder.name,
-				syncTime: Date.now()
-			});
+			const tagName = folder.name.replace(/[\s/]/g, '_');
+			this.folderDict[folder.id] = tagName;
 		}
 	}
 
-	private async syncNotes() {
+	private async syncNotes(force: boolean): Promise<number> {
 		let syncedCount = 0;
+		const lastSyncedNotes: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
+			.filter(item => item.type === 'note') // 兼容性：只加载笔记信息
+			.reduce((acc, item) => ({ ...acc, [item.id]: item }), {});
+        
+        await this.fileManager.createFolder('');
 
-		// 加载上次同步信息
-		let lastSyncedNotes: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
-			.filter(note => note.type === 'note')
-			.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
-				acc[note.id] = note;
-				return acc;
-			}, {});
-
-		// 记录此次同步信息
 		for (const note of this.notes) {
 			try {
-				// 如果笔记未修改则跳过
-				if (note.id in lastSyncedNotes && note.modifyDate <= lastSyncedNotes[note.id].syncTime) {
-					// 添加到已处理笔记列表
-					this.thisTimeSynced.push(lastSyncedNotes[note.id]);
+				const lastSynced = lastSyncedNotes[note.id];
+				
+				if (!force && lastSynced && note.modifyDate <= lastSynced.syncTime) {
+					this.thisTimeSynced.push(lastSynced);
 					continue;
 				}
 
-				const folderName = this.folderDict[note.folderId];
-				const folderPath = folderName;
-
-				// 如果笔记修改过名字则先删除旧笔记
-				if (note.id in lastSyncedNotes && note.title !== lastSyncedNotes[note.id].name) {
-					await this.fileManager.deleteFile(path.join(folderPath, `${lastSyncedNotes[note.id].name}.md`));
-				}
-
-				// 获取笔记内容
+				const noteFileName = `${note.id}.md`;
+                const noteFilePath = path.join(get(settingsStore).noteLocation, noteFileName);
+				
 				const noteDetails = await this.minoteApi.fetchNoteDetails(note.id);
+				const { entry } = noteDetails.data;
+				const extraInfo = JSON.parse(entry.extraInfo || '{}');
+				const attachments = entry.setting?.data || [];
+                
+                this.attachmentLinkMap.clear();
 
-				// 处理图片
-				const imgDict: Record<string, string> = {};
-				const downloadPromises: Promise<void>[] = [];
-
-				if (noteDetails.data.entry.setting?.data) {
-					const images: ImageInfo[] = [];
-					for (const img of noteDetails.data.entry.setting.data) {
-						const fileId = img.fileId;
-						const fileType = img.mimeType.replace('image/', '');
-						images.push({ fileId, fileType });
-						imgDict[fileId] = fileType;
-					}
-
-					// 创建图片目录
-					const imgDir = path.join(folderPath, 'img');
-					await this.fileManager.createFolder(imgDir);
-
-					// 并行下载图片
-					for (const img of images) {
-						const imgPath = path.join(imgDir, `${img.fileId}.${img.fileType}`);
-						downloadPromises.push(this.downloadImage(img.fileId, imgPath));
-					}
+				if (attachments.length > 0) {
+					const attachmentPromises = attachments.map((att: any) => 
+                        this.saveAttachmentAndGenerateLink(att, noteFilePath)
+                    );
+					await Promise.all(attachmentPromises);
 				}
 
-				// 等待所有图片下载完成
-				await Promise.all(downloadPromises);
+				let htmlContent = this.preprocessHtmlForTurndown(entry, extraInfo);
+                if (extraInfo.note_content_type === 'handwrite') {
+                    const thumbnailDigest = extraInfo.thumbnail;
+                    const thumbnailInfo = attachments.find((d: any) => d.digest === thumbnailDigest);
+                    if (thumbnailInfo) {
+                        htmlContent += `<img data-fileid="${thumbnailInfo.fileId}" />`;
+                    }
+                }
+                
+                this.addAttachmentRules();
+				let markdownBody = this.turndownService.turndown(htmlContent);
 
-				// 转换内容
-				let content = noteDetails.data.entry.content;
+                const folderNameForTag = this.folderDict[note.folderId] || '未分类';
+                const noteType = extraInfo.note_content_type || 'common';
+                
+                // 只在原笔记有title时才添加aliases，避免使用自动生成的"无标题_ID"作为alias
+                const aliasLine = extraInfo.title ? `aliases: ["${note.title.replace(/"/g, '\\"')}"]
+` : '';
+                
+                const frontmatter = `---
+${aliasLine}type: ${noteType}
+tags:
+  - 小米导入
+  - 小米导入/${folderNameForTag}
+created: ${(window as any).moment(entry.createDate).format()}
+modified: ${(window as any).moment(entry.modifyDate).format()}
+---
 
-				// 规则1: 移除<text>标签
-				content = content.replace(/<text[^>]*>(.*?)<\/text>/g, '$1');
-
-				// 规则2: 转换background标签
-				content = content.replace(
-					/<background color="#([^"]*)">(.*?)<\/background>/g,
-					'<span style="background-color: #$1">$2</span>'
-				);
-
-				// 规则3: 转换图片行 (☺格式)
-				content = content.replace(/☺\s+([^<]+)(<0\/><\/>)?/gm, (match: any, fileId: any) => {
-					return fileId in imgDict ? `![](img/${fileId}.${imgDict[fileId]})` : match;
-				});
-
-				// 规则4: 转换图片行 (<img>格式)
-				content = content.replace(
-					/<img fileid="([^"]+)" imgshow="0" imgdes="" \/>/g, (match: any, fileId: any) => {
-						return fileId in imgDict ? `![](img/${fileId}.${imgDict[fileId]})` : match;
-					}
-				);
-
-				// 保存转换后的内容
-				const notePath = path.join(folderPath, `${note.title}.md`);
-				await this.fileManager.saveFile(notePath, content);
-
+`;
+                
+				const finalContent = frontmatter + markdownBody;
+				await this.fileManager.saveFile(noteFileName, finalContent, entry.modifyDate, entry.createDate);
+				
 				syncedCount++;
-				// 添加到已处理笔记列表
 				this.thisTimeSynced.push({
 					id: note.id,
 					type: 'note',
 					name: note.title,
-					syncTime: note.modifyDate
+					syncTime: note.modifyDate,
+					folderName: folderNameForTag,
 				});
+
 			} catch (err) {
-				console.error('[minote plugin] sync MI note error: ', note, err);
-				continue;
+				console.error(`[Minote Plugin] 同步笔记失败: ${note.title} (${note.id})`, err);
 			}
 		}
-
-		return syncedCount
+		return syncedCount;
 	}
 
-	private async downloadImage(fileId: string, imgPath: string) {
-		if (await this.fileManager.exists(imgPath)) {
-			return;
+    private async saveAttachmentAndGenerateLink(attachment: any, sourceNotePath: string): Promise<void> {
+        const { fileId, mimeType } = attachment;
+        const fileExt = mimeType.split('/')[1] || 'bin';
+        const attachmentFileName = `${fileId}.${fileExt}`;
+        
+        const attachmentPath = await this.app.fileManager.getAvailablePathForAttachment(
+            attachmentFileName,
+            sourceNotePath
+        );
+        
+        const existingFile = this.app.vault.getAbstractFileByPath(attachmentPath);
+        if (existingFile instanceof TFile) {
+            const link = this.app.fileManager.generateMarkdownLink(existingFile, sourceNotePath);
+            this.attachmentLinkMap.set(fileId, link);
+            return;
+        }
+
+        try {
+            const binary = await this.minoteApi.fetchImage(fileId);
+            const savedFile = await this.app.vault.createBinary(attachmentPath, binary);
+            const link = this.app.fileManager.generateMarkdownLink(savedFile, sourceNotePath);
+            this.attachmentLinkMap.set(fileId, link);
+        } catch (e) {
+            new Notice(`下载附件失败: ${fileId}`);
+            console.error(`[Minote Plugin] 下载附件失败 ${fileId}`, e);
+        }
+    }
+    
+    private addAttachmentRules(): void {
+        const createReplacement = (node: Element): string => {
+            const fileId = node.getAttribute('data-fileid');
+            const link = this.attachmentLinkMap.get(fileId || '') || '';
+            // 确保链接以 ![[]] 格式包裹（Obsidian嵌入附件语法）
+            // Obsidian的generateMarkdownLink可能返回[[]]或![[]]，统一处理
+            if (link && !link.startsWith('!')) {
+                return '!' + link;
+            }
+            return link;
+        };
+
+        this.turndownService.addRule('audio', {
+            filter: (node) => node.nodeName === 'AUDIO' && node.hasAttribute('data-fileid'),
+            replacement: (content, node) => createReplacement(node as Element)
+        });
+
+        this.turndownService.addRule('image', {
+            filter: (node) => node.nodeName === 'IMG' && node.hasAttribute('data-fileid'),
+            replacement: (content, node) => createReplacement(node as Element)
+        });
+    }
+
+    private preprocessHtmlForTurndown(entry: any, extraInfo: any): string {
+        let content = '';
+        switch (extraInfo.note_content_type) {
+			case 'mind':
+				return `# ${entry.title || extraInfo.title || '思维导图'}\n\n${extraInfo.mind_content_plain_text || ''}`;
+			case 'handwrite':
+				// handwrite 数据存储在 mind_content 中的 JSON
+				try {
+					if (extraInfo.mind_content && extraInfo.mind_content.startsWith('<HandWrite Prdfix>')) {
+						const jsonStr = extraInfo.mind_content.replace('<HandWrite Prdfix>', '');
+						const handwriteData = JSON.parse(jsonStr);
+						return handwriteData.textContent || '';
+					}
+				} catch (e) {
+					console.error('[Minote Plugin] 解析手写笔记失败', e);
+				}
+				return '';
+			default:
+				content = entry.content || '';
 		}
 
-		const imgBinary = await this.minoteApi.fetchImage(fileId);
-		await this.fileManager.saveBinaryFile(imgPath, imgBinary);
-	}
+        // 处理 <text> 标签为段落
+        content = content
+            .replace(/<text[^>]*>\s*<\/text>/g, '<p><br></p>')  // 空text标签转换为空段落
+            .replace(/<text[^>]*>/g, '<p>')
+            .replace(/<\/text>\n/g, '</p>')  // text结束标签+换行符一起处理，避免双重换行
+            .replace(/<\/text>/g, '</p>')    // 剩余的text结束标签
+            .replace(/<new-format\/?>>/g, '');
+
+		// 转换附件和checkbox标签
+		content = content.replace(/<sound fileid="([^"]+)"[^>]*\/>/g, `<audio data-fileid="$1"></audio>`);
+		content = content.replace(/<img fileid="([^"]+)"[^>]*>/g, `<img data-fileid="$1"></img>`);
+		content = content.replace(/☺\s+([^<]+)(?:<0\/><\/>)?/g, (match, fileId) => `<img data-fileid="${fileId.trim()}"></img>`);
+		
+		// 处理剩余的换行符（用于非text标签包裹的内容）
+		content = content.replace(/\n/g, '<br>');
+
+		return content;
+    }
 }

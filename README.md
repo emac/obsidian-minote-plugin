@@ -10,12 +10,14 @@ Obsidian 小米笔记同步插件是一个社区插件，用来将[小米笔记]
 https://github.com/emac/obsidian-minote-plugin/releases
 
 ## 功能
-- 按文件夹存放笔记
-- 自动下载笔记中的图片，并将引用方式替换成 Markdown 格式
-- 替换 `<background>` 标签为 `<span>` 标签，以支持文字高亮
-- 去除多余的 `<text>` 标签
-- 兼容旧版本无标题笔记（根据首行内容和笔记 ID 自动生成标题）
-- 支持强制同步模式，即全量覆盖更新
+- 笔记以ID命名：使用笔记ID作为文件名，避免标题重命名导致的同步问题
+- 文件夹映射为标签：将小米笔记的文件夹结构转换为Obsidian标签，所有笔记存放在同一目录
+- 支持多种笔记类型：普通笔记、手写笔记、思维导图
+- 富文本格式支持：自动转换斜体、下划线、高亮等格式
+- 自动下载附件：下载笔记中的图片和音频，并使用Obsidian嵌入语法
+- 保留原始时间戳：同步后的文件保持小米笔记的创建和修改时间
+- 增量更新：只同步有变化的笔记，速度快
+- 支持强制同步模式：全量覆盖更新所有笔记
 - 支持非中国区的小米云服务
 
 ## 安装方法
@@ -39,9 +41,8 @@ https://github.com/emac/obsidian-minote-plugin/releases
 - 偶尔可能会有网络连接问题，重新点击同步即可，已同步的笔记不会再次更新。
 
 ## TODO
-- [ ] 支持思维笔记
-- [ ] 支持待办
 - [ ] 支持移动端
+- [ ] 支持删除同步
 
 ## 赞赏
 <img src="/wechat-sponsors.jpg" width=30% />
@@ -61,12 +62,14 @@ https://github.com/emac/obsidian-minote-plugin/releases
 This community plugin syncs your [Xiaomi notes](https://i.mi.com/note/h5#/) to Obsidian by converting them to Markdown format and saving them in a specified folder. The initial sync might be slow if you have many notes, but subsequent syncs will only update changed notes incrementally.
 
 ## Features
-- Organizes notes in folders
-- Automatically downloads images from notes and converts references to Markdown format
-- Replaces `<background>` tags with `<span>` tags to support text highlighting
-- Removes redundant `<text>` tags
-- Compatible with old version untitled notes (auto-generates titles based on first line and note ID)
-- Supports force sync mode for full overwrite updates
+- ID-based file naming: Uses note IDs as filenames to avoid sync issues from title changes
+- Folders mapped to tags: Converts Xiaomi notes folder structure to Obsidian tags, storing all notes in one directory
+- Multiple note types support: Regular notes, handwritten notes, and mind maps
+- Rich text format support: Automatically converts italic, underline, highlight, etc.
+- Automatic attachment download: Downloads images and audio from notes using Obsidian embed syntax
+- Preserves original timestamps: Synced files maintain creation and modification times from Xiaomi notes
+- Incremental updates: Only syncs changed notes for faster performance
+- Force sync mode: Full overwrite updates for all notes
 - Supports Xiaomi Cloud Services in non-Chinese regions
 
 ## Installation
@@ -86,8 +89,8 @@ Click the Xiaomi notes button(![](/cloud-download.png)) in the left Ribbon, or u
 ## Known Issues
 - Cookie may expire after periods of inactivity, requiring manual refresh in plugin settings
 - Occasional network connection issues may occur; simply retry sync (already synced notes won't update again)
-
-## TODO
+## todo lists
+- [ ] Support deletion sync
 - [ ] Support mind maps
 - [ ] Support mobile devices
 

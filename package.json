@@ -14,6 +14,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
+		"@types/turndown": "^5.0.5",
 		"@typescript-eslint/eslint-plugin": "5.29.0",
 		"@typescript-eslint/parser": "5.29.0",
 		"builtin-modules": "3.3.0",
@@ -31,6 +32,7 @@
 		"@types/set-cookie-parser": "^2.4.2",
 		"electron": "^31.3.1",
 		"lodash.pickby": "^4.6.0",
-		"set-cookie-parser": "^2.5.0"
+		"set-cookie-parser": "^2.5.0",
+		"turndown": "^7.2.0"
 	}
 }

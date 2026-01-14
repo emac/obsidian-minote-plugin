@@ -48,8 +48,28 @@ export default class FileManager {
 		this.vault.adapter.remove(normalizePath(path.join(get(settingsStore).noteLocation, filePath)));
 	}
 
-	async saveFile(filePath: string, content: string) {
-		this.vault.adapter.write(normalizePath(path.join(get(settingsStore).noteLocation, filePath)), content);
+	async saveFile(filePath: string, content: string, mtime?: number, ctime?: number) {
+		const fullPath = normalizePath(path.join(get(settingsStore).noteLocation, filePath));
+		await this.vault.adapter.write(fullPath, content);
+		
+		// 如果提供了时间戳，设置文件的修改时间和创建时间
+		if (mtime !== undefined || ctime !== undefined) {
+			try {
+				const fs = (window as any).require('fs');
+				const absolutePath = (this.vault.adapter as any).getFullPath(fullPath);
+				
+				// 获取当前文件状态
+				const stats = fs.statSync(absolutePath);
+				
+				// 设置访问时间和修改时间（Node.js utimes只能设置这两个）
+				const atimeMs = mtime !== undefined ? mtime : stats.atimeMs;
+				const mtimeMs = mtime !== undefined ? mtime : stats.mtimeMs;
+				
+				fs.utimesSync(absolutePath, new Date(atimeMs), new Date(mtimeMs));
+			} catch (e) {
+				console.warn('[Minote Plugin] 设置文件时间戳失败', e);
+			}
+		}
 	}
 
 	async saveBinaryFile(filePath: string, binary: ArrayBuffer) {
