@@ -81,8 +81,8 @@ export default class NoteSyncer {
 					}
 					// 去除标题中的HTML标签
 					title = title.replace(/<[^>]+>/g, '');
-					// 去除标题中的非法字符 \/:*?"<>|
-					title = title.replace(/[\\\/:*?"<>|]/g, '');
+					// 去除标题中的非法字符 \/:*?"<>| 和换行符
+					title = title.replace(/[\\\/:*?"<>|\n]/g, '');
 
 					const note: Note = {
 						id: entry.id,
