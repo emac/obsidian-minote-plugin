@@ -23,14 +23,18 @@ export default class FileManager {
 	}
 
 	async exists(filePath: string) {
+		if (!filePath) {
+			return false;
+		}
+
 		return this.vault.adapter.exists(normalizePath(path.join(get(settingsStore).noteLocation, filePath)));
 	}
 
 	async createFolder(folderPath: string, createDate: number) {
-		if (await this.exists(folderPath)) {
+		if (!folderPath || await this.exists(folderPath)) {
 			return;
 		}
-		
+
 		const fullPath = normalizePath(path.join(get(settingsStore).noteLocation, folderPath));
 		await this.vault.createFolder(fullPath);
 		const absolutePath = (this.vault.adapter as any).getFullPath(fullPath);
@@ -38,6 +42,10 @@ export default class FileManager {
 	}
 
 	async renameFolder(oldPath: string, newPath: string) {
+		if (!oldPath || !newPath) {
+			return;
+		}
+
 		if (await !this.exists(oldPath) || await this.exists(newPath)) {
 			return;
 		}
@@ -46,7 +54,7 @@ export default class FileManager {
 	}
 
 	async deleteFile(filePath: string) {
-		if (!await this.exists(filePath)) {
+		if (!filePath || !await this.exists(filePath)) {
 			return;
 		}
 
@@ -54,6 +62,10 @@ export default class FileManager {
 	}
 
 	async saveFile(filePath: string, content: string, createDate: number, modifyDate: number) {
+		if (!filePath) {
+			return;
+		}
+
 		const fullPath = normalizePath(path.join(get(settingsStore).noteLocation, filePath));
 		await this.vault.adapter.write(fullPath, content);
 		const absolutePath = (this.vault.adapter as any).getFullPath(fullPath);
@@ -61,6 +73,10 @@ export default class FileManager {
 	}
 
 	async saveBinaryFile(filePath: string, binary: ArrayBuffer) {
+		if (!filePath) {
+			return;
+		}
+
 		this.vault.adapter.writeBinary(normalizePath(path.join(get(settingsStore).noteLocation, filePath)), binary);
 	}
 }
