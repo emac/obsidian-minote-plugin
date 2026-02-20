@@ -95,6 +95,7 @@ Full Sync: Right-click the Xiaomi notes button(![](/cloud-download.png)) in the 
 
 ## TODO
 - [ ] Support mind maps
+- [ ] Support todos
 - [ ] Support mobile devices
 
 ## Disclaimer
