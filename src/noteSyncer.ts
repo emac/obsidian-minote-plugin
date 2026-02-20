@@ -71,6 +71,7 @@ export default class NoteSyncer {
 					const note: Note = {
 						id: entry.id,
 						title,
+						createDate: entry.createDate,
 						modifyDate: entry.modifyDate,
 						folderId: entry.folderId.toString(),
 					};
@@ -84,6 +85,7 @@ export default class NoteSyncer {
 					const folder: Folder = {
 						id: entry.id.toString(),
 						name: entry.subject,
+						createDate: entry.createDate,
 					};
 					this.folders.push(folder);
 				}
@@ -101,19 +103,19 @@ export default class NoteSyncer {
 
 	private async createFolders() {
 		// 添加默认文件夹
-		this.folders.push({ id: '0', name: '未分类' });
+		this.folders.push({ id: '0', name: '未分类', createDate: Date.now() });
+
+		// 加载上次同步信息
+		let lastSyncedFolders: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
+			.filter(note => note.type === 'folder')
+			.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
+				acc[note.id] = note;
+				return acc;
+			}, {});
 
 		for (const folder of this.folders) {
 			// 更新文件夹字典
 			this.folderDict[folder.id] = folder.name;
-
-			// 加载上次同步信息
-			let lastSyncedFolders: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
-				.filter(note => note.type === 'folder')
-				.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
-					acc[note.id] = note;
-					return acc;
-				}, {});
 
 			// 如果上次曾同步过
 			if (folder.id in lastSyncedFolders) {
@@ -130,7 +132,7 @@ export default class NoteSyncer {
 			}
 
 			// 创建文件夹目录
-			await this.fileManager.createFolder(folder.name);
+			await this.fileManager.createFolder(folder.name, folder.createDate);
 
 			// 添加到已处理文件夹列表
 			this.thisTimeSynced.push({
@@ -167,7 +169,7 @@ export default class NoteSyncer {
 				const folderPath = folderName;
 
 				// 如果笔记修改过名字则先删除旧笔记
-				if (note.id in lastSyncedNotes && note.title !== lastSyncedNotes[note.id].name) {
+				if (note.id in lastSyncedNotes && note.title !== lastSyncedNotes[note.id].name) {					
 					await this.fileManager.deleteFile(path.join(folderPath, `${lastSyncedNotes[note.id].name}.md`));
 				}
 
@@ -189,7 +191,7 @@ export default class NoteSyncer {
 
 					// 创建图片目录
 					const imgDir = path.join(folderPath, 'img');
-					await this.fileManager.createFolder(imgDir);
+					await this.fileManager.createFolder(imgDir, Date.now());
 
 					// 并行下载图片
 					for (const img of images) {
@@ -227,7 +229,7 @@ export default class NoteSyncer {
 
 				// 保存转换后的内容
 				const notePath = path.join(folderPath, `${note.title}.md`);
-				await this.fileManager.saveFile(notePath, content);
+				await this.fileManager.saveFile(notePath, content, note.createDate, note.modifyDate);
 
 				syncedCount++;
 				// 添加到已处理笔记列表

@@ -7,6 +7,7 @@ import { normalizePath } from 'obsidian';
 import type { Vault, MetadataCache } from 'obsidian';
 import { get } from 'svelte/store';
 import path from 'path';
+import fs from 'fs';
 
 import { settingsStore } from './settings';
 
@@ -18,19 +19,22 @@ export default class FileManager {
 		this.vault = vault;
 		this.metadataCache = metadataCache;
 		// 创建默认文件夹（如果不存在）
-		this.createFolder("");
+		this.createFolder("", Date.now());
 	}
 
 	async exists(filePath: string) {
 		return this.vault.adapter.exists(normalizePath(path.join(get(settingsStore).noteLocation, filePath)));
 	}
 
-	async createFolder(folderPath: string) {
+	async createFolder(folderPath: string, createDate: number) {
 		if (await this.exists(folderPath)) {
 			return;
 		}
-
-		this.vault.createFolder(normalizePath(path.join(get(settingsStore).noteLocation, folderPath)));
+		
+		const fullPath = normalizePath(path.join(get(settingsStore).noteLocation, folderPath));
+		await this.vault.createFolder(fullPath);
+		const absolutePath = (this.vault.adapter as any).getFullPath(fullPath);
+		fs.utimesSync(absolutePath, createDate / 1000, createDate / 1000);
 	}
 
 	async renameFolder(oldPath: string, newPath: string) {
@@ -49,8 +53,11 @@ export default class FileManager {
 		this.vault.adapter.remove(normalizePath(path.join(get(settingsStore).noteLocation, filePath)));
 	}
 
-	async saveFile(filePath: string, content: string) {
-		this.vault.adapter.write(normalizePath(path.join(get(settingsStore).noteLocation, filePath)), content);
+	async saveFile(filePath: string, content: string, createDate: number, modifyDate: number) {
+		const fullPath = normalizePath(path.join(get(settingsStore).noteLocation, filePath));
+		await this.vault.adapter.write(fullPath, content);
+		const absolutePath = (this.vault.adapter as any).getFullPath(fullPath);
+		fs.utimesSync(absolutePath, createDate / 1000, modifyDate / 1000);
 	}
 
 	async saveBinaryFile(filePath: string, binary: ArrayBuffer) {

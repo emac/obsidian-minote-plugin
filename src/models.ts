@@ -6,6 +6,7 @@
 export interface Note {
 	id: string;
 	title: string;
+	createDate: number;
 	modifyDate: number;
 	folderId: string;
 }
@@ -13,6 +14,7 @@ export interface Note {
 export interface Folder {
 	id: string;
 	name: string;
+	createDate: number;
 }
 
 export interface ImageInfo {
