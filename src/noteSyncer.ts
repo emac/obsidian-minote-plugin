@@ -18,6 +18,8 @@ export default class NoteSyncer {
 	private folders: Folder[] = [];
 	private folderDict: Record<string, string> = {};
 	private thisTimeSynced: SyncInfo[] = [];
+	private lastSyncedFolders: Record<string, SyncInfo> = {};
+	private lastSyncedNotes: Record<string, SyncInfo> = {};
 
 	constructor(fileManager: FileManager, minoteApi: MinoteApi) {
 		this.fileManager = fileManager;
@@ -30,6 +32,20 @@ export default class NoteSyncer {
 		if (force) {
 			settingsStore.actions.clearLastTimeSynced();
 		}
+
+		// 加载上次同步信息
+		this.lastSyncedFolders= get(settingsStore).lastTimeSynced
+			.filter(note => note.type === 'folder')
+			.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
+				acc[note.id] = note;
+				return acc;
+			}, {});
+		this.lastSyncedNotes = get(settingsStore).lastTimeSynced
+			.filter(note => note.type === 'note')
+			.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
+				acc[note.id] = note;
+				return acc;
+			}, {});
 
 		await this.fetchNotesAndFolders();
 		await this.createFolders();
@@ -105,29 +121,28 @@ export default class NoteSyncer {
 		// 添加默认文件夹
 		this.folders.push({ id: '0', name: '未分类', createDate: Date.now() });
 
-		// 加载上次同步信息
-		let lastSyncedFolders: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
-			.filter(note => note.type === 'folder')
-			.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
-				acc[note.id] = note;
-				return acc;
-			}, {});
-
 		for (const folder of this.folders) {
 			// 更新文件夹字典
 			this.folderDict[folder.id] = folder.name;
 
 			// 如果上次曾同步过
-			if (folder.id in lastSyncedFolders) {
-				if (folder.name !== lastSyncedFolders[folder.id].name) {
+			if (folder.id in this.lastSyncedFolders) {
+				const oldFolderName = this.lastSyncedFolders[folder.id].name;
+				if (folder.name !== oldFolderName) {
 					// 重命名文件夹
-					await this.fileManager.renameFolder(lastSyncedFolders[folder.id].name, folder.name);
-					lastSyncedFolders[folder.id].name = folder.name;					
+					await this.fileManager.renameFolder(oldFolderName, folder.name);
+					this.lastSyncedFolders[folder.id].name = folder.name;
+					// 更新笔记路径
+					for (const note of Object.values(this.lastSyncedNotes)) {
+						if (note.relativePath && note.relativePath.startsWith(oldFolderName + path.sep)) {
+							note.relativePath = note.relativePath.replace(oldFolderName, folder.name);
+						}
+					}
 				}
 
 				// 添加到已处理文件夹列表
-				lastSyncedFolders[folder.id].syncTime = Date.now();
-				this.thisTimeSynced.push(lastSyncedFolders[folder.id]);
+				this.lastSyncedFolders[folder.id].syncTime = Date.now();
+				this.thisTimeSynced.push(this.lastSyncedFolders[folder.id]);
 				continue;
 			}
 
@@ -139,6 +154,7 @@ export default class NoteSyncer {
 				id: folder.id,
 				type: 'folder',
 				name: folder.name,
+				relativePath: folder.name,
 				syncTime: Date.now()
 			});
 		}
@@ -147,30 +163,22 @@ export default class NoteSyncer {
 	private async syncNotes() {
 		let syncedCount = 0;
 
-		// 加载上次同步信息
-		let lastSyncedNotes: Record<string, SyncInfo> = get(settingsStore).lastTimeSynced
-			.filter(note => note.type === 'note')
-			.reduce((acc: Record<string, SyncInfo>, note: SyncInfo) => {
-				acc[note.id] = note;
-				return acc;
-			}, {});
-
 		// 记录此次同步信息
 		for (const note of this.notes) {
 			try {
 				// 如果笔记未修改则跳过
-				if (note.id in lastSyncedNotes && note.modifyDate <= lastSyncedNotes[note.id].syncTime) {
+				if (note.id in this.lastSyncedNotes && note.modifyDate <= this.lastSyncedNotes[note.id].syncTime) {
 					// 添加到已处理笔记列表
-					this.thisTimeSynced.push(lastSyncedNotes[note.id]);
+					this.thisTimeSynced.push(this.lastSyncedNotes[note.id]);
 					continue;
 				}
 
 				const folderName = this.folderDict[note.folderId];
 				const folderPath = folderName;
 
-				// 如果笔记修改过名字则先删除旧笔记
-				if (note.id in lastSyncedNotes && note.title !== lastSyncedNotes[note.id].name) {					
-					await this.fileManager.deleteFile(path.join(folderPath, `${lastSyncedNotes[note.id].name}.md`));
+				// 删除旧笔记
+				if (note.id in this.lastSyncedNotes) {
+					await this.fileManager.deleteFile(this.lastSyncedNotes[note.id].relativePath);
 				}
 
 				// 获取笔记内容
@@ -227,6 +235,9 @@ export default class NoteSyncer {
 					}
 				);
 
+				// 规则5: 移除<new-format/>标签
+				content = content.replace(/<new-format\/>/g, '');
+
 				// 保存转换后的内容
 				const notePath = path.join(folderPath, `${note.title}.md`);
 				await this.fileManager.saveFile(notePath, content, note.createDate, note.modifyDate);
@@ -237,6 +248,7 @@ export default class NoteSyncer {
 					id: note.id,
 					type: 'note',
 					name: note.title,
+					relativePath: notePath,
 					syncTime: note.modifyDate
 				});
 			} catch (err) {

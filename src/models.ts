@@ -26,5 +26,6 @@ export interface SyncInfo {
 	id: string;
 	type: string;
 	name: string;
+	relativePath: string;
 	syncTime: number;
 }
