@@ -9,6 +9,7 @@ import { settingsStore } from './settings';
 import FileManager from './fileManager';
 import MinoteApi from './minoteApi';
 import path from 'path';
+import type { Note, Folder, SyncInfo, ImageInfo } from './models';
 
 export default class NoteSyncer {
 	private fileManager: FileManager;

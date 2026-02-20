@@ -3,7 +3,8 @@
  * @author Emac
  * @date 2025-01-05
  */
-import { PluginSettingTab, Setting, App, Platform, Notice } from 'obsidian';
+import { PluginSettingTab, Setting, Notice, Platform } from 'obsidian';
+import type { App } from 'obsidian';
 import { get } from 'svelte/store';
 import pickBy from 'lodash.pickby';
 

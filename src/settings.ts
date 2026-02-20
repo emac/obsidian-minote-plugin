@@ -6,6 +6,7 @@
 import { writable } from 'svelte/store';
 
 import MinotePlugin from 'main';
+import type { SyncInfo } from './models';
 
 interface MinotePluginSettings {
 	noteLocation: string;

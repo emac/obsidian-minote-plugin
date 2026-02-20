@@ -3,7 +3,8 @@
  * @author Emac
  * @date 2025-01-05
  */
-import { Vault, MetadataCache, TFile, TFolder, Notice, TAbstractFile, normalizePath } from 'obsidian';
+import { normalizePath } from 'obsidian';
+import type { Vault, MetadataCache } from 'obsidian';
 import { get } from 'svelte/store';
 import path from 'path';
 

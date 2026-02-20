@@ -3,24 +3,24 @@
  * @author Emac
  * @date 2025-01-05
  */
-interface Note {
+export interface Note {
 	id: string;
 	title: string;
 	modifyDate: number;
 	folderId: string;
 }
 
-interface Folder {
+export interface Folder {
 	id: string;
 	name: string;
 }
 
-interface ImageInfo {
+export interface ImageInfo {
 	fileId: string;
 	fileType: string;
 }
 
-interface SyncInfo {
+export interface SyncInfo {
 	id: string;
 	type: string;
 	name: string;
