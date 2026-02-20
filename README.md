@@ -10,10 +10,10 @@ Obsidian 小米笔记同步插件是一个社区插件，用来将[小米笔记]
 https://github.com/emac/obsidian-minote-plugin/releases
 
 ## 功能
-- 按文件夹存放笔记
+- 按文件夹存放笔记，同时保留笔记的创建时间和修改时间
 - 自动下载笔记中的图片，并将引用方式替换成 Markdown 格式
 - 替换 `<background>` 标签为 `<span>` 标签，以支持文字高亮
-- 去除多余的 `<text>` 标签
+- 去除多余的 `<text>`、`<new-format/>` 标签
 - 兼容旧版本无标题笔记（根据首行内容和笔记 ID 自动生成标题）
 - 支持强制同步模式，即全量覆盖更新
 - 支持非中国区的小米云服务
@@ -30,13 +30,16 @@ https://github.com/emac/obsidian-minote-plugin/releases
 ![](/minote-sync-settings.jpg)
 
 ## 使用
-⚠️ 本插件是覆盖式更新，请不要在同步的文件里修改内容。
+⚠️ 本插件采用覆盖式更新，请不要在同步的文件里修改内容。
 
-点击左侧 Ribbon 上的小米笔记按钮(![](/cloud-download.png))，或者 `command+P(windows ctrl+P)` 调出 Command Pattle 输入 `Minote` 找到`同步小米笔记`即可同步。
+增量同步：点击左侧 Ribbon 上的小米笔记按钮(![](/cloud-download.png))，或者 `command+P(windows ctrl+P)` 调出 Command Pattle 输入 `Minote` 找到`同步小米笔记`并点击。
+
+全量同步：右键点击左侧 Ribbon 上的小米笔记按钮(![](/cloud-download.png))然后选择`强制同步小米笔记`，或者 `command+P(windows ctrl+P)` 调出 Command Pattle 输入 `Minote` 找到`强制同步小米笔记`并点击。
 
 ## 已知问题
 - 一段时间不使用本插件，Cookie 可能会失效，需要到插件设置页面手动刷新Cookie。
 - 偶尔可能会有网络连接问题，重新点击同步即可，已同步的笔记不会再次更新。
+- 本插件采用覆盖式更新，不会自动清理已删除的笔记，如需清理过期笔记，请先删除本地笔记文件夹，然后执行一次全量同步。
 
 ## TODO
 - [ ] 支持思维笔记
@@ -61,10 +64,10 @@ https://github.com/emac/obsidian-minote-plugin/releases
 This community plugin syncs your [Xiaomi notes](https://i.mi.com/note/h5#/) to Obsidian by converting them to Markdown format and saving them in a specified folder. The initial sync might be slow if you have many notes, but subsequent syncs will only update changed notes incrementally.
 
 ## Features
-- Organizes notes in folders
+- Stores notes in folders while preserving their creation time and modification time
 - Automatically downloads images from notes and converts references to Markdown format
 - Replaces `<background>` tags with `<span>` tags to support text highlighting
-- Removes redundant `<text>` tags
+- Removes redundant `<text>`、`<new-format/>` tags
 - Compatible with old version untitled notes (auto-generates titles based on first line and note ID)
 - Supports force sync mode for full overwrite updates
 - Supports Xiaomi Cloud Services in non-Chinese regions
@@ -79,13 +82,16 @@ Open Obsidian settings, go to `Community plugins` on the left, click the `Turn o
 4. Set note storage location (default is `/minote` folder)
 
 ## Usage
-⚠️ This plugin uses overwrite updates. Please don't modify content in synced files.
+⚠️ This plugin uses overwrite-based updates. Please don't modify content in synced files.
 
-Click the Xiaomi notes button(![](/cloud-download.png)) in the left Ribbon, or use `command+P(windows ctrl+P)` to open Command Palette and search for `Minote`.
+Incremental Sync: Click the Xiaomi notes button(![](/cloud-download.png)) in the left Ribbon, or use `command+P(windows ctrl+P)` to open Command Palette and search for `Minote` and choose the first option.
+
+Full Sync: Right-click the Xiaomi notes button(![](/cloud-download.png)) in the left Ribbon and choose the second option, or use `command+P(windows ctrl+P)` to open Command Palette and search for `Minote` and choose the second option.
 
 ## Known Issues
 - Cookie may expire after periods of inactivity, requiring manual refresh in plugin settings
 - Occasional network connection issues may occur; simply retry sync (already synced notes won't update again)
+- This plugin uses overwrite-based updates and does not automatically remove deleted notes. To clean up outdated notes, please delete the local notes folder first, then perform a full sync
 
 ## TODO
 - [ ] Support mind maps
